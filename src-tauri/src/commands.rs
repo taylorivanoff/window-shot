@@ -1,19 +1,36 @@
 use std::io::Cursor;
+use std::path::{Path, PathBuf};
+use std::process::Command;
 use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
-use tauri::{State, WebviewWindow};
+use serde_json::json;
+use tauri::{
+    AppHandle, Emitter, Manager, PhysicalPosition, PhysicalSize, Position, Size, State,
+    WebviewWindow,
+};
 use tauri_plugin_dialog::DialogExt;
 
 use crate::render::{self, Style};
 use crate::windows::{self, CaptureSource};
 
-#[derive(Default)]
 pub struct CaptureState {
     last: Mutex<Option<CapturedImage>>,
+    style: Mutex<Option<StyleDto>>,
+    source: Mutex<String>,
+}
+
+impl Default for CaptureState {
+    fn default() -> Self {
+        Self {
+            last: Mutex::new(None),
+            style: Mutex::new(None),
+            source: Mutex::new("auto".to_string()),
+        }
+    }
 }
 
 #[derive(Clone)]
@@ -28,12 +45,14 @@ pub struct WindowDto {
     pub title: String,
     pub process: String,
     pub pid: u32,
+    pub left: i32,
+    pub top: i32,
     pub width: u32,
     pub height: u32,
     pub dpi: u32,
 }
 
-#[derive(Debug, Deserialize)]
+#[derive(Clone, Debug, Deserialize)]
 pub struct StyleDto {
     pub radius: f32,
     pub padding: f32,
@@ -43,18 +62,40 @@ pub struct StyleDto {
     pub shadow_color: [u8; 3],
 }
 
-#[derive(Debug, Serialize)]
+impl Default for StyleDto {
+    fn default() -> Self {
+        Self {
+            radius: 12.0,
+            padding: 28.0,
+            shadow_blur: 18.0,
+            shadow_offset: 6.0,
+            shadow_opacity: 0.35,
+            shadow_color: [0, 0, 0],
+        }
+    }
+}
+
+#[derive(Clone, Debug, Serialize)]
 pub struct CaptureResult {
     pub data_url: String,
     pub width: u32,
     pub height: u32,
     pub suggested_name: String,
+    pub file_path: Option<String>,
+}
+
+#[derive(Debug, Serialize)]
+pub struct RectDto {
+    pub left: i32,
+    pub top: i32,
+    pub width: u32,
+    pub height: u32,
 }
 
 #[tauri::command]
 pub fn list_windows() -> Result<Vec<WindowDto>, String> {
     let current_pid = windows::current_pid();
-    let windows = windows::list_windows().map_err(|error| error.to_string())?;
+    let windows = windows::list_windows_in_z_order().map_err(|error| error.to_string())?;
     Ok(windows
         .into_iter()
         .filter(|window| window.pid != current_pid)
@@ -63,11 +104,24 @@ pub fn list_windows() -> Result<Vec<WindowDto>, String> {
             title: window.title,
             process: window.process,
             pid: window.pid,
+            left: window.frame.left,
+            top: window.frame.top,
             width: window.frame.width(),
             height: window.frame.height(),
             dpi: window.dpi,
         })
         .collect())
+}
+
+#[tauri::command]
+pub fn overlay_bounds() -> RectDto {
+    let bounds = windows::virtual_screen_bounds();
+    RectDto {
+        left: bounds.left,
+        top: bounds.top,
+        width: bounds.width(),
+        height: bounds.height(),
+    }
 }
 
 #[tauri::command]
@@ -84,14 +138,136 @@ pub fn capture_window(
         .find(|window| window.hwnd_value == hwnd_value)
         .ok_or_else(|| format!("window {hwnd} is no longer available"))?;
 
-    let source: CaptureSource = source
-        .parse()
-        .map_err(|error: anyhow::Error| error.to_string())?;
-    let style = style.into_style()?;
+    let source_text = source.clone();
+    let (result, bytes) = capture_to_result(&window, style.clone(), source_text)?;
+    *state.last.lock() = Some(CapturedImage {
+        bytes,
+        suggested_name: result.suggested_name.clone(),
+    });
+    *state.style.lock() = Some(style);
+    *state.source.lock() = source;
+    Ok(result)
+}
 
-    let captured = windows::capture_window(&window, source).map_err(|error| error.to_string())?;
+#[tauri::command]
+pub fn start_picker(style: StyleDto, source: String, app: AppHandle) -> Result<(), String> {
+    style.clone().into_style()?;
+    parse_source(&source)?;
+    start_picker_impl(&app, Some(style), Some(source));
+    Ok(())
+}
+
+/// Used by the global shortcut, where the last-used style/source are reused.
+pub fn start_picker_impl(app: &AppHandle, style: Option<StyleDto>, source: Option<String>) {
+    let state = app.state::<CaptureState>();
+    if let Some(style) = style {
+        *state.style.lock() = Some(style);
+    }
+    if let Some(source) = source {
+        *state.source.lock() = source;
+    }
+
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.hide();
+    }
+
+    if let Some(overlay) = app.get_webview_window("overlay") {
+        let bounds = windows::virtual_screen_bounds();
+        let _ = overlay.set_position(Position::Physical(PhysicalPosition::new(
+            bounds.left,
+            bounds.top,
+        )));
+        let _ = overlay.set_size(Size::Physical(PhysicalSize::new(
+            bounds.width(),
+            bounds.height(),
+        )));
+        let _ = overlay.show();
+        let _ = overlay.set_focus();
+        let _ = app.emit_to("overlay", "picker:start", ());
+    }
+}
+
+#[tauri::command]
+pub fn pick_window_at(
+    hwnd: String,
+    app: AppHandle,
+    state: State<'_, CaptureState>,
+) -> Result<(), String> {
+    let hwnd_value = parse_hwnd(&hwnd)?;
+    let window = match windows::list_windows_in_z_order()
+        .map_err(|error| error.to_string())?
+        .into_iter()
+        .find(|window| window.hwnd_value == hwnd_value)
+    {
+        Some(window) => window,
+        None => {
+            return Err(fail_picker(
+                &app,
+                format!("window {hwnd} is no longer available"),
+            ))
+        }
+    };
+
+    // The screen fallback must not capture the picker overlay itself.
+    if let Some(overlay) = app.get_webview_window("overlay") {
+        let _ = overlay.hide();
+    }
+
+    let style = state.style.lock().clone().unwrap_or_default();
+    let source = state.source.lock().clone();
+    let (mut result, bytes) = match capture_to_result(&window, style, source) {
+        Ok(capture) => capture,
+        Err(error) => return Err(fail_picker(&app, error)),
+    };
+
+    let path = match save_to_pictures(&result.suggested_name, &bytes) {
+        Ok(path) => path,
+        Err(error) => return Err(fail_picker(&app, error)),
+    };
+    result.file_path = Some(path.to_string_lossy().into_owned());
+    open_in_photos(&path);
+
+    *state.last.lock() = Some(CapturedImage {
+        bytes,
+        suggested_name: result.suggested_name.clone(),
+    });
+    let _ = app.emit_to("main", "picker:result", &result);
+    finish_picker_impl(&app);
+    Ok(())
+}
+
+#[tauri::command]
+pub fn cancel_picker(app: AppHandle) {
+    finish_picker_impl(&app);
+}
+
+fn finish_picker_impl(app: &AppHandle) {
+    if let Some(overlay) = app.get_webview_window("overlay") {
+        let _ = overlay.hide();
+    }
+    if let Some(main) = app.get_webview_window("main") {
+        let _ = main.show();
+        let _ = main.set_focus();
+    }
+}
+
+fn fail_picker(app: &AppHandle, error: String) -> String {
+    let _ = app.emit_to("main", "toast", json!({ "message": error, "error": true }));
+    finish_picker_impl(app);
+    error
+}
+
+fn capture_to_result(
+    window: &windows::WindowInfo,
+    style: StyleDto,
+    source: String,
+) -> Result<(CaptureResult, Vec<u8>), String> {
+    let capture_source = parse_source(&source)?;
+    let style = style.into_style()?;
+    let captured =
+        windows::capture_window(window, capture_source).map_err(|error| error.to_string())?;
     let styled = render::apply_style(&captured, &style, window.scale());
-    let suggested_name = default_filename(&window);
+    let suggested_name = default_filename(window);
 
     let mut encoded = Cursor::new(Vec::new());
     styled
@@ -100,17 +276,16 @@ pub fn capture_window(
     let bytes = encoded.into_inner();
     let data_url = format!("data:image/png;base64,{}", STANDARD.encode(&bytes));
 
-    *state.last.lock() = Some(CapturedImage {
-        bytes: bytes.clone(),
-        suggested_name: suggested_name.clone(),
-    });
-
-    Ok(CaptureResult {
-        data_url,
-        width: styled.width(),
-        height: styled.height(),
-        suggested_name,
-    })
+    Ok((
+        CaptureResult {
+            data_url,
+            width: styled.width(),
+            height: styled.height(),
+            suggested_name,
+            file_path: None,
+        },
+        bytes,
+    ))
 }
 
 #[tauri::command]
@@ -143,6 +318,50 @@ pub fn save_last(
     Ok(Some(path.to_string_lossy().into_owned()))
 }
 
+fn save_to_pictures(name: &str, bytes: &[u8]) -> Result<PathBuf, String> {
+    let home = std::env::var("USERPROFILE")
+        .map_err(|_| "USERPROFILE is not set; cannot locate Pictures".to_string())?;
+    let directory = Path::new(&home).join("Pictures").join("WindowShot");
+    std::fs::create_dir_all(&directory)
+        .map_err(|error| format!("failed to create {}: {error}", directory.display()))?;
+    let path = directory.join(name);
+    std::fs::write(&path, bytes)
+        .map_err(|error| format!("failed to write {}: {error}", path.display()))?;
+    Ok(path)
+}
+
+fn open_in_photos(path: &Path) {
+    // Ask Photos directly first; fall back to the registered image handler.
+    let file_name = path.to_string_lossy();
+    let uri = format!(
+        "ms-photos:viewer?fileName={}",
+        encode_uri_component(&file_name)
+    );
+    if Command::new("explorer.exe").arg(&uri).spawn().is_err() {
+        let _ = Command::new("explorer.exe").arg(path).spawn();
+    }
+}
+
+fn encode_uri_component(value: &str) -> String {
+    let mut encoded = String::with_capacity(value.len());
+    for byte in value.as_bytes() {
+        match byte {
+            b'A'..=b'Z'
+            | b'a'..=b'z'
+            | b'0'..=b'9'
+            | b'-'
+            | b'_'
+            | b'.'
+            | b'~'
+            | b':'
+            | b'\\'
+            | b'/' => encoded.push(*byte as char),
+            _ => encoded.push_str(&format!("%{byte:02X}")),
+        }
+    }
+    encoded
+}
+
 impl StyleDto {
     fn into_style(self) -> Result<Style, String> {
         ensure_non_negative(self.radius, "radius")?;
@@ -160,6 +379,12 @@ impl StyleDto {
             shadow_color: self.shadow_color,
         })
     }
+}
+
+fn parse_source(source: &str) -> Result<CaptureSource, String> {
+    source
+        .parse()
+        .map_err(|error: anyhow::Error| error.to_string())
 }
 
 fn ensure_non_negative(value: f32, name: &str) -> Result<(), String> {

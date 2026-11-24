@@ -23,7 +23,11 @@
 
   global.windowShot = {
     listWindows: () => invoke("list_windows"),
+    overlayBounds: () => invoke("overlay_bounds"),
     capture: (hwnd, style, source) => invoke("capture_window", { hwnd, style, source }),
+    startPicker: (style, source) => invoke("start_picker", { style, source }),
+    pickWindow: (hwnd) => invoke("pick_window_at", { hwnd }),
+    cancelPicker: () => invoke("cancel_picker"),
     save: (suggestedName) => invoke("save_last", { suggestedName: suggestedName || null }),
     getSettings: () => bridge.getSettings(),
     setSettings: (partial) => bridge.setSettings(partial),
@@ -32,5 +36,7 @@
     closeWindow,
     onToast: (callback) => onEvent("toast", callback),
     onSettingsChanged: (callback) => onEvent("settings:changed", callback),
+    onPickerStart: (callback) => onEvent("picker:start", callback),
+    onPickerResult: (callback) => onEvent("picker:result", callback),
   };
 })(typeof window !== "undefined" ? window : globalThis);

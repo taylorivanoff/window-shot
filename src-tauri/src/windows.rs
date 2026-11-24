@@ -23,9 +23,10 @@ use windows::Win32::UI::HiDpi::{
     GetDpiForWindow, SetProcessDpiAwarenessContext, DPI_AWARENESS_CONTEXT_PER_MONITOR_AWARE_V2,
 };
 use windows::Win32::UI::WindowsAndMessaging::{
-    EnumWindows, GetWindowDisplayAffinity, GetWindowLongPtrW, GetWindowRect, GetWindowTextLengthW,
-    GetWindowTextW, GetWindowThreadProcessId, IsIconic, IsWindowVisible, SetProcessDPIAware,
-    GWL_STYLE, PW_RENDERFULLCONTENT, WDA_EXCLUDEFROMCAPTURE, WS_MINIMIZE,
+    EnumWindows, GetClassNameW, GetSystemMetrics, GetWindowDisplayAffinity, GetWindowLongPtrW,
+    GetWindowRect, GetWindowTextLengthW, GetWindowTextW, GetWindowThreadProcessId, IsIconic,
+    IsWindowVisible, SetProcessDPIAware, GWL_STYLE, PW_RENDERFULLCONTENT, SM_CXVIRTUALSCREEN,
+    SM_CYVIRTUALSCREEN, SM_XVIRTUALSCREEN, SM_YVIRTUALSCREEN, WDA_EXCLUDEFROMCAPTURE, WS_MINIMIZE,
 };
 
 #[derive(Clone, Copy, Debug, Default)]
@@ -125,7 +126,36 @@ pub fn enable_dpi_awareness() {
     }
 }
 
+/// Full virtual desktop bounds, including negative coordinates for monitors
+/// placed left/above the primary display.
+pub fn virtual_screen_bounds() -> Rect {
+    unsafe {
+        let left = GetSystemMetrics(SM_XVIRTUALSCREEN);
+        let top = GetSystemMetrics(SM_YVIRTUALSCREEN);
+        let width = GetSystemMetrics(SM_CXVIRTUALSCREEN).max(1);
+        let height = GetSystemMetrics(SM_CYVIRTUALSCREEN).max(1);
+        Rect {
+            left,
+            top,
+            right: left + width,
+            bottom: top + height,
+        }
+    }
+}
+
+/// Windows sorted largest-first, for the compact dropdown in the main UI.
 pub fn list_windows() -> Result<Vec<WindowInfo>> {
+    let mut windows = collect_windows()?;
+    windows.sort_by(|a, b| b.raw.area().cmp(&a.raw.area()));
+    Ok(windows)
+}
+
+/// Windows in Win32 z-order (topmost first), used by the click picker.
+pub fn list_windows_in_z_order() -> Result<Vec<WindowInfo>> {
+    collect_windows()
+}
+
+fn collect_windows() -> Result<Vec<WindowInfo>> {
     let mut windows: Vec<WindowInfo> = Vec::new();
     unsafe {
         EnumWindows(
@@ -133,7 +163,6 @@ pub fn list_windows() -> Result<Vec<WindowInfo>> {
             LPARAM(&mut windows as *mut Vec<WindowInfo> as isize),
         )?;
     }
-    windows.sort_by(|a, b| b.raw.area().cmp(&a.raw.area()));
     Ok(windows)
 }
 
@@ -161,6 +190,14 @@ unsafe fn window_info(hwnd: HWND) -> Option<WindowInfo> {
     }
     let title = String::from_utf16_lossy(&text[..written as usize]);
     if title.trim().is_empty() {
+        return None;
+    }
+
+    let class = window_class(hwnd);
+    if matches!(
+        class.as_str(),
+        "Progman" | "WorkerW" | "Shell_TrayWnd" | "Shell_SecondaryTrayWnd"
+    ) {
         return None;
     }
 
@@ -227,6 +264,16 @@ unsafe fn window_info(hwnd: HWND) -> Option<WindowInfo> {
         raw,
         dpi: GetDpiForWindow(hwnd).max(96),
     })
+}
+
+unsafe fn window_class(hwnd: HWND) -> String {
+    let mut buffer = [0u16; 128];
+    let length = GetClassNameW(hwnd, &mut buffer);
+    if length <= 0 {
+        return String::new();
+    }
+    let chars = (length as usize).min(buffer.len());
+    String::from_utf16_lossy(&buffer[..chars])
 }
 
 unsafe fn process_name(pid: u32) -> String {

@@ -17,7 +17,10 @@ Ideal for READMEs, documentation, marketing pages, and social posts where you wa
 - **Live preview** - tune radius, padding, and shadow while you work
 - **Capture modes** - `Auto`, `PrintWindow`, or screen-region capture for GPU-heavy apps
 - **DPI-aware** - style values scale to the target window's DPI
-- **Window picker** - refresh and select from all capturable windows
+- **Screen picker** - Windows Snip & Sketch-style overlay: the screen dims, the hovered window highlights, and a click captures it
+- **Global shortcut** - press `Ctrl+Shift+S` from anywhere (`Alt+Shift+S` is a fallback)
+- **Opens in Photos** - screen picks are saved to `Pictures\WindowShot` and opened in Microsoft Photos automatically
+- **Window dropdown** - refresh and select from all capturable windows when you want manual control
 - **Native save dialog** - choose where each PNG is written
 - **Tauri tray scaffold** - built with the same framework, styles, and tray base as CmdDeck
 
@@ -60,10 +63,20 @@ The Windows NSIS installer is written to `src-tauri/target/release/bundle/nsis/`
 
 ## Usage
 
+### Quick capture
+
+1. Press `Ctrl+Shift+S` (or click **Select on screen** in WindowShot)
+2. Move the pointer over a window; it is highlighted with its title
+3. Click the window to capture it
+4. The PNG is saved to `Pictures\WindowShot` and opened in Photos
+5. Press `Esc` or right-click to cancel
+
+### Manual capture
+
 1. Click **Refresh** to list open windows
 2. Select the window you want to capture
 3. Adjust corner radius, padding, and shadow settings
-4. Click **Capture window** (or press `Ctrl+Enter`)
+4. Click **Capture selected** (or press `Ctrl+Enter`)
 5. Click **Save PNG** and choose a destination
 
 ### Capture modes

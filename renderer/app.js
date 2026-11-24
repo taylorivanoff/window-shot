@@ -9,6 +9,7 @@
     windowSelect: document.getElementById("window-select"),
     windowMeta: document.getElementById("window-meta"),
     refresh: document.getElementById("btn-refresh"),
+    picker: document.getElementById("btn-picker"),
     capture: document.getElementById("btn-capture"),
     save: document.getElementById("btn-save"),
     status: document.getElementById("status"),
@@ -52,6 +53,21 @@
   function setStatus(message, isError = false) {
     elements.status.textContent = message;
     elements.status.classList.toggle("error", !!isError);
+  }
+
+  function applyResult(result) {
+    elements.preview.src = result.data_url;
+    elements.preview.hidden = false;
+    elements.empty.hidden = true;
+    elements.previewSize.textContent = `${result.width}×${result.height}`;
+    elements.save.disabled = false;
+    lastSuggestedName = result.suggested_name;
+    if (result.file_path) {
+      setStatus(`Captured ${result.width}×${result.height}. Opened in Photos.`);
+      showToast("Screenshot saved and opened in Photos.");
+    } else {
+      setStatus(`Captured ${result.width}×${result.height}. Ready to save.`);
+    }
   }
 
   function syncSliderOutput(key) {
@@ -148,19 +164,22 @@
     elements.capture.disabled = true;
     setStatus("Capturing…");
     try {
-      const result = await api.capture(window.hwnd, readStyle(), elements.source.value);
-      elements.preview.src = result.data_url;
-      elements.preview.hidden = false;
-      elements.empty.hidden = true;
-      elements.previewSize.textContent = `${result.width}×${result.height}`;
-      elements.save.disabled = false;
-      lastSuggestedName = result.suggested_name;
-      setStatus(`Captured ${result.width}×${result.height}. Ready to save.`);
+      applyResult(await api.capture(window.hwnd, readStyle(), elements.source.value));
     } catch (error) {
       setStatus(String(error), true);
       showToast(`Capture failed: ${error}`, true);
     } finally {
       elements.capture.disabled = false;
+    }
+  }
+
+  async function startPicker() {
+    setStatus("Move over a window and click to capture. Esc cancels.");
+    try {
+      await api.startPicker(readStyle(), elements.source.value);
+    } catch (error) {
+      setStatus(String(error), true);
+      showToast(`Picker failed: ${error}`, true);
     }
   }
 
@@ -191,8 +210,14 @@
   elements.shadowColor.addEventListener("input", persistStyle);
   elements.windowSelect.addEventListener("change", updateWindowMeta);
   elements.refresh.addEventListener("click", refreshWindows);
+  elements.picker.addEventListener("click", startPicker);
   elements.capture.addEventListener("click", capture);
   elements.save.addEventListener("click", save);
+  api.onPickerResult(applyResult);
+  api.onToast((payload) => {
+    const message = typeof payload === "string" ? payload : payload?.message || String(payload);
+    showToast(message, Boolean(payload?.error));
+  });
 
   document.addEventListener("keydown", (event) => {
     if ((event.ctrlKey || event.metaKey) && event.key === "Enter") {

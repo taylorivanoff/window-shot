@@ -1,7 +1,7 @@
 {
   "$schema": "https://schema.tauri.app/config/2",
   "productName": "WindowShot",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "identifier": "io.github.taylorivanoff.window-shot",
   "build": {
     "frontendDist": "../renderer"
@@ -23,6 +23,24 @@
         "transparent": false,
         "center": true,
         "visible": true
+      },
+      {
+        "label": "overlay",
+        "title": "WindowShot Picker",
+        "url": "overlay.html",
+        "width": 1,
+        "height": 1,
+        "minWidth": 1,
+        "minHeight": 1,
+        "resizable": false,
+        "maximizable": false,
+        "decorations": false,
+        "transparent": true,
+        "shadow": false,
+        "alwaysOnTop": true,
+        "skipTaskbar": true,
+        "center": false,
+        "visible": false
       }
     ]
   },
