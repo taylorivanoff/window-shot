@@ -1,0 +1,129 @@
+<!DOCTYPE html>
+<html lang="en">
+
+<head>
+  <meta charset="UTF-8" />
+  <meta http-equiv="Content-Security-Policy"
+    content="default-src 'self'; img-src 'self' data: file:; style-src 'self' 'unsafe-inline'; script-src 'self'" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>WindowShot</title>
+  <link rel="stylesheet" href="vendor/shared-styles/index.css" />
+  <link rel="stylesheet" href="styles.css" />
+</head>
+
+<body>
+  <div class="app window-shell">
+    <header class="titlebar">
+      <div class="titlebar-drag" data-tauri-drag-region="deep">
+        <span class="brand-mark" aria-hidden="true">
+          <svg viewBox="0 0 24 24" width="14" height="14">
+            <path fill="currentColor"
+              d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5v-13Zm2.2.3v12.4c0 .45.35.8.8.8h10c.45 0 .8-.35.8-.8V5.8a.8.8 0 0 0-.8-.8H7a.8.8 0 0 0-.8.8Z" />
+            <circle cx="9" cy="8" r="1.6" fill="currentColor" />
+            <path fill="currentColor" d="m7.4 16.4 3-3.2 2.1 2 2.7-3 3.3 3.7v.9H7.2v-.4Z" />
+          </svg>
+        </span>
+        <span class="brand-name">WindowShot</span>
+        <span class="brand-tag">rounded + shadow</span>
+      </div>
+      <div class="window-controls" aria-label="Window">
+        <button type="button" class="window-btn" data-window-action="minimize" title="Minimize"
+          aria-label="Minimize">
+          <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+            <path fill="currentColor" d="M1 5h8v1H1z" />
+          </svg>
+        </button>
+        <button type="button" class="window-btn window-btn--close" data-window-action="close"
+          title="Close" aria-label="Close">
+          <svg viewBox="0 0 10 10" width="10" height="10" aria-hidden="true">
+            <path fill="currentColor" d="M1.2 2.1 2.1 1.2 5 4.1 7.9 1.2 8.8 2.1 5.9 5l2.9 2.9-.9.9L5 5.9 2.1 8.8l-.9-.9L4.1 5z" />
+          </svg>
+        </button>
+      </div>
+    </header>
+
+    <main class="main">
+      <section class="controls" aria-label="Screenshot settings">
+        <div class="section-head">
+          <span>Window</span>
+          <button type="button" class="icon-btn" id="btn-refresh" title="Refresh windows" aria-label="Refresh windows">
+            <svg viewBox="0 0 24 24" width="14" height="14" aria-hidden="true">
+              <path fill="currentColor"
+                d="M17.65 6.35A8 8 0 1 0 19.7 13h-2.08a6 6 0 1 1-1.8-4.24L13 12h7V5l-2.35 1.35Z" />
+            </svg>
+          </button>
+        </div>
+        <select id="window-select" class="select window-select" aria-label="Window to capture"></select>
+        <p class="muted" id="window-meta">Loading windows…</p>
+
+        <div class="section-head"><span>Style</span></div>
+
+        <div class="slider-row">
+          <div class="slider-label"><label for="radius">Corner radius</label><output id="radius-value">12</output></div>
+          <input type="range" id="radius" min="0" max="48" step="1" value="12" />
+        </div>
+        <div class="slider-row">
+          <div class="slider-label"><label for="padding">Padding</label><output id="padding-value">28</output></div>
+          <input type="range" id="padding" min="0" max="80" step="1" value="28" />
+        </div>
+        <div class="slider-row">
+          <div class="slider-label"><label for="shadow-blur">Shadow blur</label><output id="shadow-blur-value">18</output></div>
+          <input type="range" id="shadow-blur" min="0" max="64" step="1" value="18" />
+        </div>
+        <div class="slider-row">
+          <div class="slider-label"><label for="shadow-offset">Shadow offset</label><output id="shadow-offset-value">6</output></div>
+          <input type="range" id="shadow-offset" min="-20" max="32" step="1" value="6" />
+        </div>
+        <div class="slider-row">
+          <div class="slider-label"><label for="shadow-opacity">Shadow opacity</label><output id="shadow-opacity-value">35%</output></div>
+          <input type="range" id="shadow-opacity" min="0" max="100" step="1" value="35" />
+        </div>
+
+        <div class="field-row">
+          <label for="shadow-color">Shadow color</label>
+          <input type="color" id="shadow-color" class="color-input" value="#000000" />
+        </div>
+        <div class="field-row">
+          <label for="source-select">Capture mode</label>
+          <select id="source-select" class="select">
+            <option value="auto">Auto (PrintWindow → screen)</option>
+            <option value="print">PrintWindow only</option>
+            <option value="screen">Screen region only</option>
+          </select>
+        </div>
+
+        <div class="actions">
+          <button type="button" class="btn primary" id="btn-capture">Capture window</button>
+          <button type="button" class="btn" id="btn-save" disabled>Save PNG</button>
+        </div>
+        <p class="status" id="status" role="status">Ready.</p>
+      </section>
+
+      <section class="preview-pane" aria-label="Preview">
+        <div class="preview-head">
+          <span>Preview</span>
+          <span class="muted" id="preview-size">—</span>
+        </div>
+        <div class="preview-stage" id="preview-stage">
+          <div class="empty-state" id="empty-state">
+            <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
+              <path fill="currentColor"
+                d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5v-13Zm2.2.3v12.4c0 .45.35.8.8.8h10c.45 0 .8-.35.8-.8V5.8a.8.8 0 0 0-.8-.8H7a.8.8 0 0 0-.8.8Z" />
+            </svg>
+            <p>Choose a window and press <strong>Capture window</strong>.</p>
+            <p class="muted">The PNG has real transparency — the checkerboard shows through.</p>
+          </div>
+          <img id="preview" class="preview" alt="Screenshot preview" hidden />
+        </div>
+      </section>
+    </main>
+  </div>
+
+  <div class="toast hidden" id="toast" role="status"></div>
+
+  <script src="vendor/tauri-tray-bridge.js"></script>
+  <script src="bridge/window-shot-bridge.js"></script>
+  <script src="app.js"></script>
+</body>
+
+</html>

@@ -1,0 +1,31 @@
+{
+  "name": "window-shot-ui",
+  "description": "Apple-style window screenshots for Windows - Tauri desktop UI",
+  "author": {
+    "name": "Taylor Ivanoff"
+  },
+  "version": "0.1.0",
+  "repository": "https://github.com/taylorivanoff/window-shot",
+  "license": "MIT",
+  "scripts": {
+    "postinstall": "node scripts/sync-shared-styles.cjs",
+    "sync:styles": "node scripts/sync-shared-styles.cjs",
+    "predev": "node scripts/sync-shared-styles.cjs",
+    "prebuild": "node scripts/sync-shared-styles.cjs",
+    "dev": "node scripts/run-tauri.cjs dev",
+    "start": "node scripts/run-tauri.cjs dev",
+    "build": "node scripts/run-tauri.cjs build",
+    "tauri": "node scripts/run-tauri.cjs",
+    "lint": "eslint renderer",
+    "lint:fix": "eslint renderer --fix"
+  },
+  "dependencies": {
+    "@taylorivanoff/shared-styles": "file:../shared-styles"
+  },
+  "devDependencies": {
+    "@tauri-apps/cli": "^2",
+    "@eslint/js": "^9.39.5",
+    "eslint": "^9.39.5",
+    "globals": "^16.0.0"
+  }
+}
