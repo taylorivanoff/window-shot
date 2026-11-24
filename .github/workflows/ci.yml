@@ -1,0 +1,53 @@
+name: CI
+
+on:
+  push:
+    branches: [master]
+  pull_request:
+
+jobs:
+  check:
+    runs-on: windows-latest
+    steps:
+      - name: Checkout app
+        uses: actions/checkout@v4
+        with:
+          path: app
+      - name: Checkout tauri-tray-base
+        uses: actions/checkout@v4
+        with:
+          repository: taylorivanoff/tauri-tray-base
+          path: tauri-tray-base
+      - name: Materialize shared-styles
+        shell: bash
+        run: |
+          mkdir -p shared-styles
+          cp app/renderer/vendor/shared-styles/*.css shared-styles/
+          cat > shared-styles/package.json <<'EOF'
+          {
+            "name": "@taylorivanoff/shared-styles",
+            "version": "0.0.0",
+            "files": ["tokens.css", "base.css", "window.css", "index.css"],
+            "exports": {
+              ".": "./index.css",
+              "./tokens.css": "./tokens.css",
+              "./base.css": "./base.css",
+              "./window.css": "./window.css",
+              "./index.css": "./index.css"
+            },
+            "style": "index.css"
+          }
+          EOF
+      - uses: dtolnay/rust-toolchain@stable
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+      - name: Install frontend deps
+        working-directory: app
+        run: npm install
+      - name: Lint
+        working-directory: app
+        run: npm run lint
+      - name: Cargo check
+        working-directory: app/src-tauri
+        run: cargo check

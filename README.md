@@ -80,8 +80,8 @@ WindowShot calls `PrintWindow` with `PW_RENDERFULLCONTENT`, crops the result to 
 
 1. Bump the version in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`
 2. Replace the placeholder updater key in `src-tauri/tauri.conf.json` with your own Minisign public key
-3. Run `npm run build`
-4. Upload the NSIS installer from `src-tauri/target/release/bundle/nsis/` to a new GitHub Release
+3. Push to `master` - the Release workflow builds the NSIS installer and publishes a `v<version>` GitHub Release with the installer attached
+4. You can also run the Release workflow manually from the Actions tab; versions that are already released are skipped
 
 ## Keywords
 
