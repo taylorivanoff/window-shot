@@ -10,7 +10,7 @@ Ideal for READMEs, documentation, marketing pages, and social posts where you wa
 
 <img width="978" height="698" alt="WindowShot desktop UI" src="docs/ui.png" />
 
-<img width="1192" height="808" alt="WindowShot transparent PNG output" src="docs/example.png" />
+<img width="1508" height="1062" alt="WindowShot transparent PNG of File Explorer" src="docs/example.png" />
 
 ## Features
 
