@@ -8,6 +8,8 @@ pub struct Style {
     pub shadow_offset: f32,
     pub shadow_opacity: f32,
     pub shadow_color: [u8; 3],
+    /// `None` keeps the PNG transparent; `Some(rgb)` fills the whole canvas.
+    pub background_color: Option<[u8; 3]>,
 }
 
 impl Default for Style {
@@ -19,12 +21,13 @@ impl Default for Style {
             shadow_offset: 6.0,
             shadow_opacity: 0.35,
             shadow_color: [0, 0, 0],
+            background_color: None,
         }
     }
 }
 
-/// Composite the window onto a transparent canvas with antialiased rounded
-/// corners and a soft, offset drop shadow.
+/// Composite the window onto a transparent or solid canvas with antialiased
+/// rounded corners and a soft, offset drop shadow.
 pub fn apply_style(window: &RgbaImage, style: &Style, scale: f32) -> RgbaImage {
     let width = window.width() as usize;
     let height = window.height() as usize;
@@ -46,10 +49,14 @@ pub fn apply_style(window: &RgbaImage, style: &Style, scale: f32) -> RgbaImage {
         0
     });
 
+    let background = style
+        .background_color
+        .map(|color| Rgba([color[0], color[1], color[2], 255]))
+        .unwrap_or(Rgba([0, 0, 0, 0]));
     let mut output = RgbaImage::from_pixel(
         (width + 2 * padding) as u32,
         (height + 2 * padding) as u32,
-        Rgba([0, 0, 0, 0]),
+        background,
     );
 
     let mask = if radius > 0.0 {
@@ -233,4 +240,27 @@ fn blend_over(destination: &mut Rgba<u8>, color: [u8; 3], alpha: f32) {
         destination.0[channel] = value.round().clamp(0.0, 255.0) as u8;
     }
     destination.0[3] = (out_alpha * 255.0).round().clamp(0.0, 255.0) as u8;
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    fn small_image() -> RgbaImage {
+        RgbaImage::from_pixel(8, 8, Rgba([40, 90, 160, 255]))
+    }
+
+    #[test]
+    fn transparent_background_keeps_canvas_clear() {
+        let output = apply_style(&small_image(), &Style::default(), 1.0);
+        assert_eq!(output.get_pixel(0, 0).0[3], 0);
+    }
+
+    #[test]
+    fn solid_background_fills_canvas() {
+        let mut style = Style::default();
+        style.background_color = Some([250, 250, 255]);
+        let output = apply_style(&small_image(), &style, 1.0);
+        assert_eq!(output.get_pixel(0, 0).0, [250, 250, 255, 255]);
+    }
 }

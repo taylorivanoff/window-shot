@@ -180,11 +180,41 @@ input[type="range"] {
   cursor: pointer;
 }
 
+.color-input:disabled {
+  opacity: 0.45;
+  cursor: default;
+}
+
+.background-controls {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.inline-check {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  font-size: 10px;
+  color: var(--text-secondary);
+  cursor: pointer;
+}
+
+.inline-check input {
+  margin: 0;
+  accent-color: var(--accent);
+}
+
 .actions {
   display: grid;
   grid-template-columns: 1fr auto;
   gap: 6px;
   margin-top: 8px;
+}
+
+.actions--single {
+  grid-template-columns: 1fr;
+  margin-top: 0;
 }
 
 .btn {
@@ -274,6 +304,7 @@ kbd {
 }
 
 .preview-stage {
+  position: relative;
   flex: 1;
   min-height: 0;
   display: grid;
@@ -299,6 +330,31 @@ kbd {
       linear-gradient(45deg, transparent 75%, #1d1f23 75%),
       linear-gradient(-45deg, transparent 75%, #1d1f23 75%);
   }
+}
+
+.preview-stage.has-background {
+  background-color: var(--preview-bg, #ffffff);
+  background-image: none;
+}
+
+.preview-stage:focus-visible {
+  outline: 2px solid var(--accent);
+  outline-offset: -2px;
+}
+
+.preview-stage.drag-over::after {
+  content: "Drop image to style";
+  position: absolute;
+  inset: 12px;
+  display: grid;
+  place-items: center;
+  border: 2px dashed var(--accent);
+  border-radius: var(--radius);
+  background: color-mix(in srgb, var(--bg-elevated) 90%, transparent);
+  color: var(--accent);
+  font-size: 12px;
+  font-weight: 700;
+  pointer-events: none;
 }
 
 .empty-state {

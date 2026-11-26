@@ -81,6 +81,20 @@ The Windows NSIS installer is written to `src-tauri/target/release/bundle/nsis/`
 4. Click **Capture selected** (or press `Ctrl+Enter`)
 5. Click **Save PNG** and choose a destination
 
+### Import or paste an image
+
+1. Click **Import image…** in the sidebar, or paste a screenshot into the preview with `Ctrl+V`
+2. You can also drop a PNG, JPEG, or BMP file onto the preview
+3. The image appears immediately with the current rounded corners and shadow
+4. Adjust the style controls; the preview re-renders live from the original image
+5. Click **Save PNG** to export the styled result
+
+### Background color
+
+- **Transparent** is the default; the checkerboard in the preview shows the real alpha
+- Clear **Transparent** and pick a color to fill the exported PNG with a solid background
+- The preview stage switches from the checkerboard to the chosen color so you can judge the result
+
 ### Capture modes
 
 - **Auto** - try `PrintWindow` first, then fall back to a screen-region grab if the frame is blank
@@ -89,7 +103,7 @@ The Windows NSIS installer is written to `src-tauri/target/release/bundle/nsis/`
 
 ## How it works
 
-WindowShot calls `PrintWindow` with `PW_RENDERFULLCONTENT`, crops the result to the DWM extended frame bounds, applies a signed-distance rounded-corner alpha mask, blurs the shadow into the transparent canvas, and writes the final PNG through the `image` crate. If `PrintWindow` returns a flat frame, `Auto` falls back to `BitBlt` from the screen device context.
+WindowShot calls `PrintWindow` with `PW_RENDERFULLCONTENT`, crops the result to the DWM extended frame bounds, applies a signed-distance rounded-corner alpha mask, blurs the shadow into a transparent or solid canvas, and writes the final PNG through the `image` crate. Imported and pasted images are decoded to RGBA and kept as the source, so style and background changes re-render the same image without losing quality. If `PrintWindow` returns a flat frame, `Auto` falls back to `BitBlt` from the screen device context.
 
 ## Releasing
 

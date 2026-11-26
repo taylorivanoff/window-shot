@@ -56,6 +56,12 @@
         <select id="window-select" class="select window-select" aria-label="Window to capture"></select>
         <p class="muted" id="window-meta">Loading windows…</p>
 
+        <div class="actions actions--single">
+          <button type="button" class="btn" id="btn-import">Import image…</button>
+          <input type="file" id="import-file" accept="image/png,image/jpeg,image/bmp" hidden />
+        </div>
+        <p class="muted">Paste a screenshot with <kbd>Ctrl</kbd> + <kbd>V</kbd>, or drop an image on the preview.</p>
+
         <div class="section-head"><span>Style</span></div>
 
         <div class="slider-row">
@@ -84,6 +90,17 @@
           <input type="color" id="shadow-color" class="color-input" value="#000000" />
         </div>
         <div class="field-row">
+          <label for="background-color">Background</label>
+          <div class="background-controls">
+            <label class="inline-check" for="background-transparent">
+              <input type="checkbox" id="background-transparent" checked />
+              <span>Transparent</span>
+            </label>
+            <input type="color" id="background-color" class="color-input" value="#FFFFFF" disabled
+              aria-label="Background color" />
+          </div>
+        </div>
+        <div class="field-row">
           <label for="source-select">Capture mode</label>
           <select id="source-select" class="select">
             <option value="auto">Auto (PrintWindow → screen)</option>
@@ -106,14 +123,15 @@
           <span>Preview</span>
           <span class="muted" id="preview-size">—</span>
         </div>
-        <div class="preview-stage" id="preview-stage">
+        <div class="preview-stage" id="preview-stage" tabindex="0"
+          aria-label="Screenshot preview. Paste or drop an image here.">
           <div class="empty-state" id="empty-state">
             <svg viewBox="0 0 24 24" width="28" height="28" aria-hidden="true">
               <path fill="currentColor"
                 d="M4 5.5A2.5 2.5 0 0 1 6.5 3h11A2.5 2.5 0 0 1 20 5.5v13a2.5 2.5 0 0 1-2.5 2.5h-11A2.5 2.5 0 0 1 4 18.5v-13Zm2.2.3v12.4c0 .45.35.8.8.8h10c.45 0 .8-.35.8-.8V5.8a.8.8 0 0 0-.8-.8H7a.8.8 0 0 0-.8.8Z" />
             </svg>
-            <p>Choose a window and press <strong>Capture window</strong>.</p>
-            <p class="muted">The PNG has real transparency — the checkerboard shows through.</p>
+            <p>Paste a screenshot, import an image, or capture a window.</p>
+            <p class="muted">The PNG keeps real transparency unless you choose a background color.</p>
           </div>
           <img id="preview" class="preview" alt="Screenshot preview" hidden />
         </div>

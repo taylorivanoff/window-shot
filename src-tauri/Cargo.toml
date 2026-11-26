@@ -1,6 +1,6 @@
 [package]
 name = "window-shot-ui"
-version = "0.1.3"
+version = "0.1.4"
 description = "Apple-style window screenshots for Windows"
 authors = ["Taylor Ivanoff"]
 edition = "2021"
@@ -19,7 +19,7 @@ tauri-plugin-global-shortcut = "2"
 tauri-tray-base = { path = "../../tauri-tray-base" }
 anyhow = "1"
 base64 = "0.22"
-image = { version = "0.25", default-features = false, features = ["png"] }
+image = { version = "0.25", default-features = false, features = ["png", "jpeg", "bmp"] }
 parking_lot = "0.12"
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"

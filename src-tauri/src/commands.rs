@@ -5,6 +5,7 @@ use std::time::{SystemTime, UNIX_EPOCH};
 
 use base64::engine::general_purpose::STANDARD;
 use base64::Engine;
+use image::RgbaImage;
 use parking_lot::Mutex;
 use serde::{Deserialize, Serialize};
 use serde_json::json;
@@ -19,6 +20,7 @@ use crate::windows::{self, CaptureSource};
 
 pub struct CaptureState {
     last: Mutex<Option<CapturedImage>>,
+    source_image: Mutex<Option<SourceImage>>,
     style: Mutex<Option<StyleDto>>,
     source: Mutex<String>,
 }
@@ -27,6 +29,7 @@ impl Default for CaptureState {
     fn default() -> Self {
         Self {
             last: Mutex::new(None),
+            source_image: Mutex::new(None),
             style: Mutex::new(None),
             source: Mutex::new("auto".to_string()),
         }
@@ -37,6 +40,20 @@ impl Default for CaptureState {
 struct CapturedImage {
     bytes: Vec<u8>,
     suggested_name: String,
+}
+
+/// The unstyled image kept so style changes can re-render the preview live.
+#[derive(Clone)]
+struct SourceImage {
+    image: RgbaImage,
+    scale: f32,
+    name: String,
+}
+
+struct CaptureBundle {
+    result: CaptureResult,
+    bytes: Vec<u8>,
+    source_image: SourceImage,
 }
 
 #[derive(Debug, Serialize)]
@@ -60,6 +77,8 @@ pub struct StyleDto {
     pub shadow_offset: f32,
     pub shadow_opacity: f32,
     pub shadow_color: [u8; 3],
+    #[serde(default)]
+    pub background_color: Option<[u8; 3]>,
 }
 
 impl Default for StyleDto {
@@ -71,6 +90,7 @@ impl Default for StyleDto {
             shadow_offset: 6.0,
             shadow_opacity: 0.35,
             shadow_color: [0, 0, 0],
+            background_color: None,
         }
     }
 }
@@ -138,14 +158,64 @@ pub fn capture_window(
         .find(|window| window.hwnd_value == hwnd_value)
         .ok_or_else(|| format!("window {hwnd} is no longer available"))?;
 
-    let source_text = source.clone();
-    let (result, bytes) = capture_to_result(&window, style.clone(), source_text)?;
+    let CaptureBundle {
+        result,
+        bytes,
+        source_image,
+    } = capture_to_result(&window, style.clone(), source.clone())?;
+    *state.last.lock() = Some(CapturedImage {
+        bytes,
+        suggested_name: result.suggested_name.clone(),
+    });
+    *state.source_image.lock() = Some(source_image);
+    *state.style.lock() = Some(style);
+    *state.source.lock() = source;
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn import_image(
+    data_url: String,
+    style: StyleDto,
+    suggested_name: Option<String>,
+    state: State<'_, CaptureState>,
+) -> Result<CaptureResult, String> {
+    let style_value = style.clone().into_style()?;
+    let image = decode_image_data_url(&data_url)?;
+    let source = SourceImage {
+        image,
+        scale: 1.0,
+        name: import_filename(suggested_name.as_deref()),
+    };
+    let (result, bytes) = render_source(&source, &style_value)?;
+
+    *state.last.lock() = Some(CapturedImage {
+        bytes,
+        suggested_name: result.suggested_name.clone(),
+    });
+    *state.source_image.lock() = Some(source);
+    *state.style.lock() = Some(style);
+    Ok(result)
+}
+
+#[tauri::command]
+pub fn restyle_image(
+    style: StyleDto,
+    state: State<'_, CaptureState>,
+) -> Result<CaptureResult, String> {
+    let style_value = style.clone().into_style()?;
+    let source = state
+        .source_image
+        .lock()
+        .clone()
+        .ok_or_else(|| "import or capture an image before styling".to_string())?;
+    let (result, bytes) = render_source(&source, &style_value)?;
+
     *state.last.lock() = Some(CapturedImage {
         bytes,
         suggested_name: result.suggested_name.clone(),
     });
     *state.style.lock() = Some(style);
-    *state.source.lock() = source;
     Ok(result)
 }
 
@@ -215,7 +285,11 @@ pub fn pick_window_at(
 
     let style = state.style.lock().clone().unwrap_or_default();
     let source = state.source.lock().clone();
-    let (mut result, bytes) = match capture_to_result(&window, style, source) {
+    let CaptureBundle {
+        mut result,
+        bytes,
+        source_image,
+    } = match capture_to_result(&window, style.clone(), source) {
         Ok(capture) => capture,
         Err(error) => return Err(fail_picker(&app, error)),
     };
@@ -231,6 +305,8 @@ pub fn pick_window_at(
         bytes,
         suggested_name: result.suggested_name.clone(),
     });
+    *state.source_image.lock() = Some(source_image);
+    *state.style.lock() = Some(style);
     let _ = app.emit_to("main", "picker:result", &result);
     finish_picker_impl(&app);
     Ok(())
@@ -261,31 +337,79 @@ fn capture_to_result(
     window: &windows::WindowInfo,
     style: StyleDto,
     source: String,
-) -> Result<(CaptureResult, Vec<u8>), String> {
+) -> Result<CaptureBundle, String> {
     let capture_source = parse_source(&source)?;
     let style = style.into_style()?;
     let captured =
         windows::capture_window(window, capture_source).map_err(|error| error.to_string())?;
-    let styled = render::apply_style(&captured, &style, window.scale());
-    let suggested_name = default_filename(window);
+    let source_image = SourceImage {
+        image: captured,
+        scale: window.scale(),
+        name: default_filename(window),
+    };
+    let (result, bytes) = render_source(&source_image, &style)?;
 
+    Ok(CaptureBundle {
+        result,
+        bytes,
+        source_image,
+    })
+}
+
+fn render_source(source: &SourceImage, style: &Style) -> Result<(CaptureResult, Vec<u8>), String> {
+    let pixels = source.image.width() as u64 * source.image.height() as u64;
+    if pixels > 40_000_000 {
+        return Err("image is too large to style (maximum 40 megapixels)".to_string());
+    }
+
+    let styled = render::apply_style(&source.image, style, source.scale);
+    let bytes = encode_png(&styled)?;
+    let result = CaptureResult {
+        data_url: format!("data:image/png;base64,{}", STANDARD.encode(&bytes)),
+        width: styled.width(),
+        height: styled.height(),
+        suggested_name: source.name.clone(),
+        file_path: None,
+    };
+    Ok((result, bytes))
+}
+
+fn encode_png(image: &RgbaImage) -> Result<Vec<u8>, String> {
     let mut encoded = Cursor::new(Vec::new());
-    styled
+    image
         .write_to(&mut encoded, image::ImageFormat::Png)
         .map_err(|error| error.to_string())?;
-    let bytes = encoded.into_inner();
-    let data_url = format!("data:image/png;base64,{}", STANDARD.encode(&bytes));
+    Ok(encoded.into_inner())
+}
 
-    Ok((
-        CaptureResult {
-            data_url,
-            width: styled.width(),
-            height: styled.height(),
-            suggested_name,
-            file_path: None,
-        },
-        bytes,
-    ))
+fn decode_image_data_url(value: &str) -> Result<RgbaImage, String> {
+    let trimmed = value.trim();
+    let payload = if trimmed.starts_with("data:") {
+        let (header, payload) = trimmed
+            .split_once(',')
+            .ok_or_else(|| "invalid image data URL".to_string())?;
+        if !header.contains(";base64") {
+            return Err("only base64 image data URLs are supported".to_string());
+        }
+        payload
+    } else {
+        trimmed
+    };
+
+    let bytes = STANDARD
+        .decode(payload.trim())
+        .map_err(|error| format!("invalid image data: {error}"))?;
+    let decoded = image::load_from_memory(&bytes)
+        .map_err(|error| format!("unsupported image format: {error}"))?;
+    Ok(decoded.to_rgba8())
+}
+
+fn import_filename(name: Option<&str>) -> String {
+    let stem = name
+        .and_then(|value| Path::new(value).file_stem())
+        .map(|value| value.to_string_lossy().into_owned())
+        .unwrap_or_else(|| "screenshot".to_string());
+    format!("{}-{}.png", sanitize(&stem), timestamp())
 }
 
 #[tauri::command]
@@ -298,7 +422,7 @@ pub fn save_last(
         .last
         .lock()
         .clone()
-        .ok_or_else(|| "capture a window before saving".to_string())?;
+        .ok_or_else(|| "capture or import an image before saving".to_string())?;
     let name = suggested_name.unwrap_or(captured.suggested_name);
 
     let picked = window
@@ -377,6 +501,7 @@ impl StyleDto {
             shadow_offset: self.shadow_offset,
             shadow_opacity: self.shadow_opacity,
             shadow_color: self.shadow_color,
+            background_color: self.background_color,
         })
     }
 }
@@ -442,4 +567,50 @@ fn timestamp() -> u128 {
         .duration_since(UNIX_EPOCH)
         .map(|duration| duration.as_millis())
         .unwrap_or(0)
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+    use serde_json::json;
+
+    fn style_json(background_color: serde_json::Value) -> serde_json::Value {
+        json!({
+            "radius": 12,
+            "padding": 28,
+            "shadow_blur": 18,
+            "shadow_offset": 6,
+            "shadow_opacity": 0.35,
+            "shadow_color": [0, 0, 0],
+            "background_color": background_color,
+        })
+    }
+
+    #[test]
+    fn style_dto_accepts_transparent_background() {
+        let style: StyleDto = serde_json::from_value(style_json(json!(null))).unwrap();
+        assert_eq!(style.background_color, None);
+    }
+
+    #[test]
+    fn style_dto_accepts_solid_background() {
+        let style: StyleDto = serde_json::from_value(style_json(json!([250, 250, 255]))).unwrap();
+        assert_eq!(style.background_color, Some([250, 250, 255]));
+    }
+
+    #[test]
+    fn decode_image_data_url_reads_png() {
+        let image = RgbaImage::from_pixel(2, 2, image::Rgba([10, 20, 30, 255]));
+        let mut encoded = Cursor::new(Vec::new());
+        image
+            .write_to(&mut encoded, image::ImageFormat::Png)
+            .unwrap();
+        let data_url = format!(
+            "data:image/png;base64,{}",
+            STANDARD.encode(encoded.into_inner())
+        );
+
+        let decoded = decode_image_data_url(&data_url).unwrap();
+        assert_eq!(decoded.dimensions(), (2, 2));
+    }
 }

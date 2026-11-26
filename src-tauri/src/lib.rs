@@ -65,6 +65,8 @@ pub fn run() {
             commands::list_windows,
             commands::overlay_bounds,
             commands::capture_window,
+            commands::import_image,
+            commands::restyle_image,
             commands::start_picker,
             commands::pick_window_at,
             commands::cancel_picker,

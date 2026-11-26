@@ -25,6 +25,9 @@
     listWindows: () => invoke("list_windows"),
     overlayBounds: () => invoke("overlay_bounds"),
     capture: (hwnd, style, source) => invoke("capture_window", { hwnd, style, source }),
+    importImage: (dataUrl, style, suggestedName) =>
+      invoke("import_image", { dataUrl, style, suggestedName: suggestedName || null }),
+    restyle: (style) => invoke("restyle_image", { style }),
     startPicker: (style, source) => invoke("start_picker", { style, source }),
     pickWindow: (hwnd) => invoke("pick_window_at", { hwnd }),
     cancelPicker: () => invoke("cancel_picker"),
