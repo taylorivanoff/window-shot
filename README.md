@@ -32,6 +32,8 @@ Ideal for READMEs, documentation, marketing pages, and social posts where you wa
 2. Run the installer and follow the prompts
 3. Launch **WindowShot** from the Start menu
 
+WindowShot checks for updates on startup and once every 24 hours. You can also choose **Check for Updates** from the tray menu. Updates are downloaded from the latest GitHub Release.
+
 WindowShot currently requires Windows because capture uses Win32 APIs directly.
 
 ### From source
@@ -91,9 +93,9 @@ WindowShot calls `PrintWindow` with `PW_RENDERFULLCONTENT`, crops the result to 
 
 ## Releasing
 
-1. Bump the version in `package.json`, `src-tauri/tauri.conf.json`, and `src-tauri/Cargo.toml`
-2. Replace the placeholder updater key in `src-tauri/tauri.conf.json` with your own Minisign public key
-3. Push to `master` - the Release workflow builds the NSIS installer and publishes a `v<version>` GitHub Release with the installer attached
+1. Bump the version in `package.json`, `src-tauri/tauri.conf.json`, `src-tauri/Cargo.toml`, and `src-tauri/Cargo.lock`
+2. Keep the Minisign public key and `latest.json` endpoint in `src-tauri/tauri.conf.json` in sync with the `TAURI_SIGNING_PRIVATE_KEY` repository secret
+3. Push to `master` - the Release workflow builds the signed NSIS installer and publishes a `v<version>` GitHub Release with the installer, `.sig`, and `latest.json` attached
 4. You can also run the Release workflow manually from the Actions tab; versions that are already released are skipped
 
 ## Keywords
